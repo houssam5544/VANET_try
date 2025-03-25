@@ -140,7 +140,7 @@ class  Registration_Authority (Entity):
             pass # implement a fonction waiting la LA1
         elif source_entity == "LTCA":
             pass # implement a fonction verifing the reponse of LTCA and then forwarding to LA1 and LA2
-        elif source_entity == "LTCA":
+        elif source_entity == "PCA":
             pass # implement a fonction that forward the data to VEH
         else:   #the entity is a vehicule implement then a fonction to send LTC in data to LTCA
             pass
@@ -163,50 +163,158 @@ class  Registration_Authority (Entity):
 class Link_Authority (Entity):
     def __init__(self, address):
         super().__init__(address)
-        self.RA=None
-        self.PCA=None
+        self.connected_vehicule=0
 
     def add_RA(self, RA):
-        self.RA(RA)
+        self.connected_Entities["RA"]=RA
 
     def add_PCA(self, PCA):
-        self.PCA=PCA
+        self.connected_Entities["PCA"]=PCA
+
+    def add_vehicule(self, VEH):
+        self.connected_vehicule+=1
+        self.connected_Entities["VEH_"+str(self.connected_vehicule)]=VEH
+
+    def packet_forwarding(self,packet:mini_packet):
+        source_entity = self.get_msg_Entity_source(packet.address)
+        if source_entity == "RA":
+            pass 
+        else:   #The source of the packet is not known
+            pass
+    
+    def forward_and_empty_buffer(self,buffer: list[mini_packet]):
+        while True:
+            if len(buffer) != 0:
+                packet=buffer[0]
+                self.packet_forwarding(packet)
+                buffer.pop(0)
+
+
+    def start(self):
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread.start()
+        forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
+        forwarding_thread.start()
 
 
 class Pseudo_Certificate_Authority (Entity):
     def __init__(self, address):
         super().__init__(address)
-        self.LA1=None
-        self.LA2=None
-        self.RA=None
+        self.connected_vehicule=0
     
     def add_LA1(self, LA):
-        self.LA1(LA)
+        self.connected_Entities["LA1"]=LA
 
     def add_LA2(self, LA):
-        self.LA2(LA)
+        self.connected_Entities["LA2"]=LA
 
     def add_RA(self, RA):
-        self.RA(RA)
+        self.connected_Entities["RA"]=RA
+    
+    def add_vehicule(self, VEH):
+        self.connected_vehicule+=1
+        self.connected_Entities["VEH_"+str(self.connected_vehicule)]=VEH
 
-    def add_PCA(self, LA):
-        self.LA=LA
+
+    def packet_forwarding(self,packet:mini_packet):
+        source_entity = self.get_msg_Entity_source(packet.address)
+        if source_entity == "RA":
+            pass
+        else:   #the unknown
+            pass
+    
+    def forward_and_empty_buffer(self,buffer: list[mini_packet]):
+        while True:
+            if len(buffer) != 0:
+                packet=buffer[0]
+                self.packet_forwarding(packet)
+                buffer.pop(0)
+
+
+    def start(self):
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread.start()
+        forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
+        forwarding_thread.start()
+
+
+
 
 
 class Long_Term_Certificate_Authority (Entity):
     def __init__(self, address):
         super().__init__(address)
-        self.RA=None
+        self.connected_vehicule=0
 
-    def add_RA(self, RA):
-        self.RA(RA)
+    def add_PCA(self, RA):
+        self.connected_Entities["RA"]=RA
+    
+    def add_vehicule(self, VEH):
+        self.connected_vehicule+=1
+        self.connected_Entities["VEH_"+str(self.connected_vehicule)]=VEH
+
+
+    def packet_forwarding(self,packet:mini_packet):
+        source_entity = self.get_msg_Entity_source(packet.address)
+        if source_entity == "RA":
+            pass
+        else:   #the source is unknown
+            pass
+    
+    def forward_and_empty_buffer(self,buffer: list[mini_packet]):
+        while True:
+            if len(buffer) != 0:
+                packet=buffer[0]
+                self.packet_forwarding(packet)
+                buffer.pop(0)
+
+
+    def start(self):
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread.start()
+        forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
+        forwarding_thread.start()
+
+
 
 
 class vehicule (Entity):
     def __init__(self, address):
         super().__init__(address)
-        self.RA=None
+    
+    def add_LA1(self, LA):
+        self.connected_Entities["LA1"]=LA
+
+    def add_LA2(self, LA):
+        self.connected_Entities["LA2"]=LA
+
+    def add_PCA(self, PCA):
+        self.connected_Entities["PCA"]=PCA
+
+    def add_LTCA(self, LTCA):
+        self.connected_Entities["LTCA"]=LTCA
 
     def add_RA(self, RA):
-        self.RA(RA)
+        self.connected_Entities["RA"]=RA
+
+    def packet_forwarding(self,packet:mini_packet):
+        source_entity = self.get_msg_Entity_source(packet.address)
+        if source_entity == "RA":
+            pass
+        else:
+            pass    #The source of the packet is not unknown
+    
+    def forward_and_empty_buffer(self,buffer: list[mini_packet]):
+        while True:
+            if len(buffer) != 0:
+                packet=buffer[0]
+                self.packet_forwarding(packet)
+                buffer.pop(0)
+
+
+    def start(self):
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread.start()
+        forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
+        forwarding_thread.start()
 
