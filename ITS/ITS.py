@@ -17,18 +17,27 @@ class mini_packet:
 
 class Entity:
 
-    def __init__(self, address: Address):
+    def __init__(self, sending_address: Address, listening_address: Address):
         self.__Private_Key=ec.generate_private_key(ec.SECP256R1())
         self.__Public_Key=self.__Private_Key.public_key()
-        self.address=address
+        self.sending_address=sending_address
+        self.listening_address=listening_address
         self.connected_Entities: dict[str,Entity]={}
         self.buffer:list[mini_packet]=[]
 
     def send(self, destination: "Entity",binary_msg: bin):
-        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-            s.connect((destination.address.ip_address, destination.address.Port))
-            s.sendall(binary_msg)
-            return 1
+        while (True):
+            try:
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                s.bind((self.sending_address.ip_address,self.sending_address.Port))
+                s.connect((destination.listening_address.ip_address, destination.listening_address.Port))
+                s.sendall(binary_msg)
+                #print("data is sent from {} to {}".format(self.sending_address.Port,destination.listening_address.Port))       #Logs
+                s.close()
+                break
+            except:
+                pass
     
     # this fnct maybe will not be in use 
     def listen(self, address: Address):
@@ -40,14 +49,12 @@ class Entity:
                 data = conn.recv(4096)
                 return addr,data
     
-    def listen_and_fill_buffer(self,address: Address, buffer: list[mini_packet]):
+    def listen_and_fill_buffer(self,address: Address):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
             s.bind((address.ip_address, address.Port))
             while True:
                 s.listen(100)
-                print("ITS LEASTNING") ##
                 conn, addr = s.accept()
-                print("ITS ACCEPTED")  ##
                 source_address = Address(None,None)
                 source_address.ip_address,source_address.Port=addr
                 with conn:
@@ -55,7 +62,6 @@ class Entity:
                     packet = mini_packet(None,None)
                     packet.address,packet.data=source_address,data
                     self.buffer.append(packet)
-                    print(self.buffer[0].data.decode('utf-8')) #to delete
     
     def get_Public_Key(self):
         return self.__Public_Key
@@ -74,7 +80,7 @@ class Entity:
     def get_msg_Entity_source(self,address:Address):
         #On traite notre cas ou juste les port sont differents
         for name,entity in self.connected_Entities.items():
-            if address.Port == entity.address.Port:
+            if address.Port == entity.sending_address.Port:
                 return name
         return None
     
@@ -115,10 +121,11 @@ class Entity:
 
 
 class  Registration_Authority (Entity):
-    def __init__(self, address):
-        super().__init__(address)
+    def __init__(self, sending_address, listening_address):
+        super().__init__(sending_address, listening_address)
         self.connected_vehicule=0
-    
+        self.linkage_cert=[] # it will be used to verify that both LC1 and LC2 are created
+
     def add_LA1(self, LA):
         self.connected_Entities["LA1"]=LA
 
@@ -137,18 +144,26 @@ class  Registration_Authority (Entity):
 
     def packet_forwarding(self,packet:mini_packet):
         source_entity = self.get_msg_Entity_source(packet.address)
+        print('RA received a message from ', source_entity)
+        time.sleep(3)
         if source_entity == None:
             pass    #The source of the packet is not known
         elif source_entity == "LA1":
-            pass # implement a fonction waiting LA2
+            pass # implement a fonction waiting LA2 then sending both lc to PCA
         elif source_entity == "LA2":
-            pass # implement a fonction waiting la LA1
+            pass # implement a fonction waiting LA1 then sending both lc to PCA
         elif source_entity == "LTCA":
-            pass # implement a fonction verifing the reponse of LTCA and then forwarding to LA1 and LA2
+            print('Sending Linkage certif to LA1 and LA2..')
+            #verfying if response is true or false
+            self.send(self.connected_Entities['LA1'],packet.data)
+            self.send(self.connected_Entities['LA2'],packet.data)
         elif source_entity == "PCA":
-            pass # implement a fonction that forward the data to VEH
+            print('Sending PCA to VEH')
+            self.send(VEH,packet.data)
         else:   #the entity is a vehicule implement then a fonction to send LTC in data to LTCA
-            pass
+            #processing...
+            print('Sending LTC to LTCA')
+            self.send(self.connected_Entities['LTCA'],packet.data)
 
 
     def forward_and_empty_buffer(self,buffer: list[mini_packet]):
@@ -160,15 +175,15 @@ class  Registration_Authority (Entity):
 
 
     def start(self):
-        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
-        listening_thread.start()
-        forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
-        forwarding_thread.start()
+        ra_listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.listening_address,))
+        ra_listening_thread.start()
+        ra_forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
+        ra_forwarding_thread.start()
 
 
 class Link_Authority (Entity):
-    def __init__(self, address):
-        super().__init__(address)
+    def __init__(self, sending_address, listening_address):
+        super().__init__(sending_address, listening_address)
         self.connected_vehicule=0
 
     def add_RA(self, RA):
@@ -183,8 +198,10 @@ class Link_Authority (Entity):
 
     def packet_forwarding(self,packet:mini_packet):
         source_entity = self.get_msg_Entity_source(packet.address)
+        print('LA had received message from ', source_entity)
         if source_entity == "RA":
-            pass 
+            #processing
+            self.send(self.connected_Entities['RA'],packet.data)
         else:   #The source of the packet is not known
             pass
     
@@ -197,15 +214,15 @@ class Link_Authority (Entity):
 
 
     def start(self):
-        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.listening_address,))
         listening_thread.start()
         forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
         forwarding_thread.start()
 
 
 class Pseudonym_Certificate_Authority (Entity):
-    def __init__(self, address):
-        super().__init__(address)
+    def __init__(self, sending_address, listening_address):
+        super().__init__(sending_address, listening_address)
         self.connected_vehicule=0
     
     def add_LA1(self, LA):
@@ -224,8 +241,9 @@ class Pseudonym_Certificate_Authority (Entity):
 
     def packet_forwarding(self,packet:mini_packet):
         source_entity = self.get_msg_Entity_source(packet.address)
+        print ('PCA had received a message from ',source_entity)
         if source_entity == "RA":
-            pass
+            self.send(self.connected_Entities['RA'],packet.data)
         else:   #the unknown
             pass
     
@@ -238,7 +256,7 @@ class Pseudonym_Certificate_Authority (Entity):
 
 
     def start(self):
-        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.listening_address,))
         listening_thread.start()
         forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
         forwarding_thread.start()
@@ -248,11 +266,11 @@ class Pseudonym_Certificate_Authority (Entity):
 
 
 class Long_Term_Certificate_Authority (Entity):
-    def __init__(self, address):
-        super().__init__(address)
+    def __init__(self, sending_address, listening_address):
+        super().__init__(sending_address, listening_address)
         self.connected_vehicule=0
 
-    def add_PCA(self, RA):
+    def add_RA(self, RA):
         self.connected_Entities["RA"]=RA
     
     def add_vehicule(self, VEH):
@@ -262,8 +280,9 @@ class Long_Term_Certificate_Authority (Entity):
 
     def packet_forwarding(self,packet:mini_packet):
         source_entity = self.get_msg_Entity_source(packet.address)
+        print('LTCA received a message from ',source_entity)
         if source_entity == "RA":
-            pass
+            self.send(self.connected_Entities['RA'],packet.data)
         else:   #the source is unknown
             pass
     
@@ -276,7 +295,7 @@ class Long_Term_Certificate_Authority (Entity):
 
 
     def start(self):
-        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
+        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.listening_address,))
         listening_thread.start()
         forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
         forwarding_thread.start()
@@ -285,8 +304,8 @@ class Long_Term_Certificate_Authority (Entity):
 
 
 class Vehicule (Entity):
-    def __init__(self, address):
-        super().__init__(address)
+    def __init__(self, sending_address, listening_address):
+        super().__init__(sending_address, listening_address)
     
     def add_LA1(self, LA):
         self.connected_Entities["LA1"]=LA
@@ -319,30 +338,36 @@ class Vehicule (Entity):
 
 
     def start(self):
-        listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.address,self.buffer,))
-        listening_thread.start()
+        veh_listening_thread = threading.Thread(target=self.listen_and_fill_buffer, args=(self.listening_address,))
+        veh_listening_thread.start()
         
         #forwarding_thread = threading.Thread(target=self.forward_and_empty_buffer, args=(self.buffer,))
         #forwarding_thread.start()
 
 
 if __name__ == '__main__':
-    
+
     # Address INIT
-    ra_address   = Address('localhost', 5000)
-    la1_address  = Address('localhost', 5001)
-    la2_address  = Address('localhost', 5002)
-    LTCA_address = Address('localhost', 5003)
-    PCA_address  = Address('localhost', 5004)
-    veh_address  = Address('localhost', 5005)
+    ra_sending_address   = Address('localhost', 5000)
+    ra_listening_address = Address('localhost', 5006)
+    la1_sending_address  = Address('localhost', 5001)
+    la1_listening_address = Address('localhost', 5007)
+    la2_sending_address  = Address('localhost', 5002)
+    la2_listening_address = Address('localhost', 5008)
+    LTCA_sending_address = Address('localhost', 5003)
+    LTCA_listening_address = Address('localhost', 5009)
+    PCA_sending_address  = Address('localhost', 5004)
+    PCA_listening_address = Address('localhost', 5010)
+    veh_sending_address  = Address('localhost', 5005)
+    veh_listening_address = Address('localhost', 5011)
 
     # Entities creation
-    RA = Registration_Authority(ra_address)
-    VEH = Vehicule(veh_address)
-    LTCA = Long_Term_Certificate_Authority(LTCA_address)
-    PCA = Pseudonym_Certificate_Authority(PCA_address)
-    LA1 = Link_Authority(la1_address)
-    LA2 = Link_Authority(la2_address)
+    RA = Registration_Authority(ra_sending_address, ra_listening_address)
+    VEH = Vehicule(veh_sending_address, veh_listening_address)
+    LTCA = Long_Term_Certificate_Authority(LTCA_sending_address, LTCA_listening_address)
+    PCA = Pseudonym_Certificate_Authority(PCA_sending_address, PCA_listening_address)
+    LA1 = Link_Authority(la1_sending_address, la1_listening_address)
+    LA2 = Link_Authority(la2_sending_address, la2_listening_address)
 
     # Recognition (linking entities)
     RA.add_vehicule(VEH)
@@ -351,7 +376,7 @@ if __name__ == '__main__':
     RA.add_LTCA(LTCA)
     RA.add_PCA(PCA)
 
-    LTCA.add_PCA(PCA)
+    LTCA.add_RA(RA)
     LTCA.add_vehicule(VEH)
 
     VEH.add_RA(RA)
@@ -376,6 +401,7 @@ if __name__ == '__main__':
 
     # Start services
     RA.start()
+    print("1")
     VEH.start()
     LTCA.start()
     PCA.start()
@@ -383,6 +409,8 @@ if __name__ == '__main__':
     LA2.start()
 
     time.sleep(4)
+    print('start sending')
     VEH.send(RA,'hello'.encode('utf-8'))
-    VEH.send(RA,'hello'.encode('utf-8'))
-    VEH.send(RA,'hello'.encode('utf-8'))
+    #VEH.send(PCA,'hello'.encode('utf-8'))
+    #VEH.send(RA,'hello'.encode('utf-8'))
+    #VEH.send(RA,'hello'.encode('utf-8'))
